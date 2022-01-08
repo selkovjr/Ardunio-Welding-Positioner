@@ -9,7 +9,7 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 
 #define USING_PAUSE_SWITCH (1) // Set to 1 if using an external switch (PAUSE_IN) to pause the stepper motor
 
-#define EEPROM_KEY 0xABCC // Change this if you modify any of the menus to refresh the EEPROM
+#define EEPROM_KEY 0xABCE // Change this if you modify any of the menus to refresh the EEPROM
 #define PUL_OUT   13      // Pulse output
 #define DIR_OUT   12      // Direction output
 #define EN_OUT    11      // Enable output
@@ -21,8 +21,8 @@ const unsigned long uSecPerMinute = 60000000;
 const unsigned long uSecPerStepAtOneRPM = uSecPerMinute / stepsPerRevolution; // micropulses for RPM calculation
 const unsigned int TopLineLen = 16;  // 16 character max for top line
 const unsigned int BtmLineLen = 8;   // 8 character max for bottom line
-const unsigned int ButtonDebounceCount = 10; // 50ms debounce timer when used with 100hz timer
-const unsigned int ButtonRepeatCount = 20; // 50ms debounce timer when used with 100hz timer
+const unsigned int ButtonDebounceCount = 10;
+const unsigned int ButtonRepeatCount = 20;
 
 // panel and buttons
 enum {
@@ -137,9 +137,9 @@ int sample_button_state() {
 void reset_settings() {
   //                                                CRNT, PREV, MIN,   MAX, DIV, STP,     Type, "            TOP", " BTM"
   settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  41,  41,  41,    41,  17,   0, DIS_VALUE, "Gear Ratio:    ", ":17    ", EEPROM_KEY};
-  settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,   4,   0,   1,    32,   1,   2,   DIS_POW, "Micro Steps:   ", "       ", EEPROM_KEY};
+  settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,  16,   0,   1,    32,   1,   2,   DIS_POW, "Microsteps:    ", "       ", EEPROM_KEY};
   settings[SET_PAUSE]     = (settings_s){EEPROM_KEY,   0,   0,   0,  5000,   1, 250, DIS_VALUE, "Pause:         ", "ms     ", EEPROM_KEY};
-  settings[SET_TURN]      = (settings_s){EEPROM_KEY,   2,   0,   1,    25,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
+  settings[SET_TURN]      = (settings_s){EEPROM_KEY,   2,   0,   1,   200,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
   settings[SET_RPM]       = (settings_s){EEPROM_KEY, 100,   0,  10,  6000, 100,  10, DIS_VALUE, "Speed:         ", " RPM   ", EEPROM_KEY};
   settings[SET_DIR]       = (settings_s){EEPROM_KEY,   1,   0,   0,     1,   1,   1,   DIS_DIR, "Direction:     ", "       ", EEPROM_KEY};
   settings[SET_VERSION]   = (settings_s){EEPROM_KEY,   0,   0,   0,     0,   1,   0,  DIS_NONE, "Version:       ", "0.0.1  ", EEPROM_KEY};
@@ -216,7 +216,7 @@ void UpdateDisplay() {
             bottomLine = settings[settings_sub_menu].currentValue;
           }
           else {
-            bottomLine = String((float)settings[settings_sub_menu].currentValue / (float)settings[settings_sub_menu].divider, 4);
+            bottomLine = String((float)settings[settings_sub_menu].currentValue / (float)settings[settings_sub_menu].divider, 1);
           }
         }
         else {
@@ -373,7 +373,6 @@ void StepperMotor() {
 
 void setup() {
   Serial.begin(115200);
-  // Start the display library
   lcd.begin(16, 2);
 
   EEPROM.get(0, settings);
@@ -432,10 +431,10 @@ void loop() {
       button = b;  // in case we need to do something with the saved value
 
       if (HandleButton(button)) {
-        sprintf(buf, "%3d of %d", button_samples, ButtonDebounceCount);
-        Serial.println(buf);
-        sprintf(buf, "RIGHT %d, UP %d, DOWN %d, LEFT %d, SELECT %d, NONE %d", sum[0], sum[1], sum[2], sum[3], sum[4], sum[5]);
-        Serial.println(buf);
+        // sprintf(buf, "%3d of %d", button_samples, ButtonDebounceCount);
+        // Serial.println(buf);
+        // sprintf(buf, "RIGHT %d, UP %d, DOWN %d, LEFT %d, SELECT %d, NONE %d", sum[0], sum[1], sum[2], sum[3], sum[4], sum[5]);
+        // Serial.println(buf);
         UpdateDisplay();
         last_run_state = run_state;
         updated = 1;
