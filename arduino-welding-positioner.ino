@@ -1,4 +1,3 @@
-//Sample using LiquidCrystal library
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <Wire.h>
@@ -22,7 +21,8 @@ const unsigned long uSecPerMinute = 60000000;
 const unsigned long uSecPerStepAtOneRPM = uSecPerMinute / stepsPerRevolution; // micropulses for RPM calculation
 const unsigned int TopLineLen = 16;  // 16 character max for top line
 const unsigned int BtmLineLen = 8;   // 8 character max for bottom line
-const unsigned int ButtonDebounce = 10; // 50ms debounce timer when used with 100hz timer
+const unsigned int ButtonDebounceCount = 10; // 50ms debounce timer when used with 100hz timer
+const unsigned int ButtonRepeatCount = 20; // 50ms debounce timer when used with 100hz timer
 
 // panel and buttons
 enum {
@@ -64,7 +64,6 @@ enum {
 };
 
 
-static int button_sample  = BTN_NONE;
 static int button = BTN_NONE;
 static int last_button  = BTN_NONE;
 static int last_run_state = PAUSED;
@@ -99,54 +98,40 @@ settings_s settings[SET_COUNT];
 
 char buf[50];
 int sum[6];
-// read the buttons
-int read_menu_buttons() {
+
+
+// Read the buttons by accumulating the observed button states in sum[].
+int sample_button_state() {
   int adc_key_in  = 0;
 
-  adc_key_in = analogRead(KEY_IN);        // read the value from the sensor
+  adc_key_in = analogRead(KEY_IN);
 
-  if (adc_key_in > 900) return BTN_NONE; // We make this the 1st option for speed reasons since it will be the most likely result
+  if (adc_key_in > 900) {
+    return BTN_NONE; // We make this the 1st option for speed reasons since it will be the most likely result
+  }
 
-  // if (adc_key_in < 50)  {
-  if (adc_key_in < 150)  {
-  //   sprintf(buf, "%4d -> Right", adc_key_in);
-  //   Serial.println(buf);
+  if (adc_key_in < 150)  {  // right
     sum[BTN_RIGHT]++;
     return BTN_RIGHT;
   }
-
-  // if (adc_key_in < 195)  {
-  if (adc_key_in < 300)  {
-  //   sprintf(buf, "%4d -> Up", adc_key_in);
-  //   Serial.println(buf);
+  if (adc_key_in < 300)  {  // up
     sum[BTN_UP]++;
     return BTN_UP;
   }
-
-  // if (adc_key_in < 380)  {
-  if (adc_key_in < 450)  {
-  //   sprintf(buf, "%4d -> Down", adc_key_in);
-  //   Serial.println(buf);
+  if (adc_key_in < 450)  {  // down
     sum[BTN_DOWN]++;
     return BTN_DOWN;
   }
-
-  // if (adc_key_in < 555)  {
-  if (adc_key_in < 650)  {
-  //   sprintf(buf, "%4d -> Left", adc_key_in);
-  //   Serial.println(buf);
+  if (adc_key_in < 650)  {  // left
     sum[BTN_LEFT]++;
     return BTN_LEFT;
   }
-
-  if (adc_key_in < 790)  {
-  //  sprintf(buf, "%4d -> Select", adc_key_in);
-  //   Serial.println(buf);
+  if (adc_key_in < 790)  {  // select
     sum[BTN_SELECT]++;
     return BTN_SELECT;
   }
 
-  return BTN_SELECT;  // when all others fail, return this...
+  return BTN_SELECT;  // why?
 }
 
 void reset_settings() {
@@ -257,13 +242,13 @@ void UpdateDisplay() {
   }
 }
 
-bool HandleButton(int button) {
+bool HandleButton (int button) {
   bool refresh = true;
 
-  if(home_display) {
+  if (home_display) {
     switch(button) {
       case (BTN_UP):
-        if(quick_adjust_rpm) {
+        if (quick_adjust_rpm) {
           Increase(SET_TURN);
         }
         else {
@@ -272,7 +257,7 @@ bool HandleButton(int button) {
         break;
 
       case (BTN_DOWN):
-        if(quick_adjust_rpm) {
+        if (quick_adjust_rpm) {
           Decrease(SET_TURN);
         }
         else {
@@ -386,7 +371,6 @@ void StepperMotor() {
   digitalWrite(EN_OUT, run_state == PAUSED ? HIGH : LOW);
 }
 
-
 void setup() {
   Serial.begin(115200);
   // Start the display library
@@ -429,19 +413,18 @@ void loop() {
 
   StepperMotor();
 
-  //make this a 100hz loop
+  // Make this a 100-Hz loop
   if((micros()) < system_timer) return;
   system_timer = (micros() + 10000);
 
-  button_sample = read_menu_buttons();
-
-  if (button_sample != BTN_NONE) {
-    ++button_samples;  // Let the voltage settle
+  if (sample_button_state() != BTN_NONE && button_samples <= ButtonRepeatCount) {
+    // Measure the duration of the button press event; BTN_NONE signals the end of it.
+    ++button_samples;
   }
   else {
     bool updated = 0;
-    if (button_samples > ButtonDebounce) {
-      // Select the button call with the largest number of samples
+    if (button_samples > ButtonDebounceCount) {
+      // Select the button press call with the largest number of samples
       int b = 0;
       for (int i = 0; i <= 5; i++) {
         if (sum[b] < sum[i]) b = i;
@@ -449,18 +432,18 @@ void loop() {
       button = b;  // in case we need to do something with the saved value
 
       if (HandleButton(button)) {
-        // sprintf(buf, "%3d of %d, %d", button_samples, ButtonDebounce, button_sample);
-        // Serial.println(buf);
-        // sprintf(buf, "RIGHT %d, UP %d, DOWN %d, LEFT %d, SELECT %d, NONE %d", sum[0], sum[1], sum[2], sum[3], sum[4], sum[5]);
-        // Serial.println(buf);
+        sprintf(buf, "%3d of %d", button_samples, ButtonDebounceCount);
+        Serial.println(buf);
+        sprintf(buf, "RIGHT %d, UP %d, DOWN %d, LEFT %d, SELECT %d, NONE %d", sum[0], sum[1], sum[2], sum[3], sum[4], sum[5]);
+        Serial.println(buf);
         UpdateDisplay();
         last_run_state = run_state;
         updated = 1;
       }
     }
 
-    // || in the original code
-    // if ((button_samples > ButtonDebounce && HandleButton(lcd_key_last)) || (last_run_state != run_state))
+    // The case after || in the original code:
+    // if ((button_samples > ButtonDebounceCount && HandleButton(lcd_key_last)) || (last_run_state != run_state))
     if (!updated && last_run_state != run_state) {
       UpdateDisplay();
       last_run_state = run_state;
