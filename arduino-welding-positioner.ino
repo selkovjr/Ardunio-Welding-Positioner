@@ -10,7 +10,7 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 
 #define USING_PAUSE_SWITCH (1) // Set to 1 if using an external switch (PAUSE_IN) to pause the stepper motor
 
-#define EEPROM_KEY 0xABCD // Change this if you modify any of the menus to refresh the EEPROM
+#define EEPROM_KEY 0xABCC // Change this if you modify any of the menus to refresh the EEPROM
 #define PUL_OUT   13      // Pulse output
 #define DIR_OUT   12      // Direction output
 #define EN_OUT    11      // Enable output
@@ -18,7 +18,8 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 #define PAUSE_IN  3       // Foot switch to start or stop the rotation
 
 const int stepsPerRevolution = 200;  // 1.8 degree step increments
-const unsigned long microPulses = 60000000 / stepsPerRevolution; // micropulses for RPM calculation
+const unsigned long uSecPerMinute = 60000000;
+const unsigned long uSecPerStepAtOneRPM = uSecPerMinute / stepsPerRevolution; // micropulses for RPM calculation
 const unsigned int TopLineLen = 16;  // 16 character max for top line
 const unsigned int BtmLineLen = 8;   // 8 character max for bottom line
 const unsigned int ButtonDebounce = 10; // 50ms debounce timer when used with 100hz timer
@@ -150,7 +151,7 @@ int read_menu_buttons() {
 
 void reset_settings() {
   //                                                CRNT, PREV, MIN,   MAX, DIV, STP,     Type, "            TOP", " BTM"
-  settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  10,   0,   1,   100,  10,   1, DIS_VALUE, "Gear Ratio:    ", ":1     ", EEPROM_KEY};
+  settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  41,  41,  41,    41,  17,   0, DIS_VALUE, "Gear Ratio:    ", ":17    ", EEPROM_KEY};
   settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,   4,   0,   1,    32,   1,   2,   DIS_POW, "Micro Steps:   ", "       ", EEPROM_KEY};
   settings[SET_PAUSE]     = (settings_s){EEPROM_KEY,   0,   0,   0,  5000,   1, 250, DIS_VALUE, "Pause:         ", "ms     ", EEPROM_KEY};
   settings[SET_TURN]      = (settings_s){EEPROM_KEY,   2,   0,   1,    25,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
@@ -226,7 +227,12 @@ void UpdateDisplay() {
       case DIS_VALUE:
       case DIS_POW:
         if(settings[settings_sub_menu].divider > 1) {
-          bottomLine = String((float)settings[settings_sub_menu].currentValue / (float)settings[settings_sub_menu].divider, 1);
+          if(settings[settings_sub_menu].divider == 17) {
+            bottomLine = settings[settings_sub_menu].currentValue;
+          }
+          else {
+            bottomLine = String((float)settings[settings_sub_menu].currentValue / (float)settings[settings_sub_menu].divider, 4);
+          }
         }
         else {
           bottomLine = (String(settings[settings_sub_menu].currentValue));
@@ -339,10 +345,10 @@ void StepperMotor() {
     (double)((double)settings[SET_RATIO].currentValue / (double)settings[SET_RATIO].divider) *
     2.0; //divide by 2 so there is equal time high and low
 
-  //This is how many microseconds half the period will be
-  microseconds = microPulses / (unsigned long)dmicroseconds;
+  // This is how many microseconds half the period will be
+  microseconds = uSecPerStepAtOneRPM / (unsigned long)dmicroseconds;
 
-  //Arduino isnt the best timer accuracy, limit to 100us
+  // Arduino isn't the most accurate timer; limit to 100us
   microseconds = max(microseconds, 100);
 
   if(micronow - micropulse >= microseconds) {
