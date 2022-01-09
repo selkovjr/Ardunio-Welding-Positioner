@@ -7,7 +7,7 @@
 hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander chip
 
 
-#define EEPROM_KEY 0xABCE // Change this if you modify any of the menus to refresh the EEPROM
+#define EEPROM_KEY 0xABCD // Change this if you modify any of the menus to refresh the EEPROM
 #define PUL_OUT   13      // Pulse output
 #define DIR_OUT   12      // Direction output
 #define GATE_OUT  11      // Motor enable output
@@ -53,12 +53,12 @@ enum {
 
 // Menus
 enum {
-  SET_RATIO,
-  SET_MICROSTEP,
-  SET_PAUSE,
   SET_STEPS,
+  SET_PAUSE,
   SET_RPM,
   SET_DIR,
+  SET_MICROSTEP,
+  SET_RATIO,
   SET_VERSION,
   SET_COUNT
 };
@@ -74,7 +74,7 @@ volatile int step_signal = LOW;  // The motor makes a step on the front of this 
 // Otherwise, trigger switch opening will command the off state.
 int trigger_state_on_power_up;
 
-static int run_state = READY;  // trigger state
+static int run_state;  // Sustem state: READY, RUN or PAUSED
 
 bool home_display = true;
 bool quick_adjust_rpm = true;
@@ -136,12 +136,12 @@ int sample_button_state() {
 
 void reset_settings() {
   //                                                CRNT, PREV, MIN,   MAX, DIV, STP,     Type, "            TOP", " BTM"
-  settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  41,  41,  41,    41,  17,   0, DIS_VALUE, "Gear Ratio:    ", ":17    ", EEPROM_KEY};
-  settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,  16,   0,   1,    32,   1,   2,   DIS_POW, "Microsteps:    ", "       ", EEPROM_KEY};
-  settings[SET_PAUSE]     = (settings_s){EEPROM_KEY,   0,   0,   0,  5000,   1, 250, DIS_VALUE, "Pause:         ", "ms     ", EEPROM_KEY};
   settings[SET_STEPS]     = (settings_s){EEPROM_KEY,   2,   0,   1,   200,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
+  settings[SET_PAUSE]     = (settings_s){EEPROM_KEY,   0,   0,   0,  5000,   1, 250, DIS_VALUE, "Pause:         ", "ms     ", EEPROM_KEY};
   settings[SET_RPM]       = (settings_s){EEPROM_KEY, 100,   0,  10,  6000, 100,  10, DIS_VALUE, "Speed:         ", " RPM   ", EEPROM_KEY};
   settings[SET_DIR]       = (settings_s){EEPROM_KEY,   1,   0,   0,     1,   1,   1,   DIS_DIR, "Direction:     ", "       ", EEPROM_KEY};
+  settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,  16,   0,   1,    32,   1,   2,   DIS_POW, "Microsteps:    ", "       ", EEPROM_KEY};
+  settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  41,  41,  41,    41,  17,   0, DIS_VALUE, "Gear Ratio:    ", ":17    ", EEPROM_KEY};
   settings[SET_VERSION]   = (settings_s){EEPROM_KEY,   0,   0,   0,     0,   1,   0,  DIS_NONE, "Version:       ", "0.0.1  ", EEPROM_KEY};
 }
 
@@ -401,8 +401,14 @@ void setup() {
 
   UpdateDisplay();
 
- run_state = READY;
- trigger_state_on_power_up = digitalRead(PAUSE_IN);
+  // System state on power-up.
+  // It is equivalent to PAUSED and is logically redundant.
+  // It provides user comfort, avoiding the confusin  "Paused"
+  // indictator on the display before the first run has had
+  // a chance to start.
+  run_state = READY;
+
+  trigger_state_on_power_up = digitalRead(PAUSE_IN);
 }  // setup()
 
 void loop() {
