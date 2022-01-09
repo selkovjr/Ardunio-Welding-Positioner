@@ -142,9 +142,9 @@ void reset_settings() {
 }
 
 void Increase(int item) {
-  if(item >= 0 && item < SET_COUNT) {
+  if (item >= 0 && item < SET_COUNT) {
     settings[item].previousValue = settings[item].currentValue;
-    if(settings[settings_sub_menu].displayType == DIS_POW) {
+    if (settings[settings_sub_menu].displayType == DIS_POW) {
       settings[item].currentValue *= settings[item].stepValue;
     }
     else {
@@ -155,9 +155,9 @@ void Increase(int item) {
 }
 
 void Decrease(int item) {
-  if(item >= 0 && item < SET_COUNT) {
+  if (item >= 0 && item < SET_COUNT) {
     settings[item].previousValue = settings[item].currentValue;
-    if(settings[settings_sub_menu].displayType == DIS_POW) {
+    if (settings[settings_sub_menu].displayType == DIS_POW) {
       settings[item].currentValue /= settings[item].stepValue;
     }
     else {
@@ -171,7 +171,7 @@ void UpdateDisplay() {
   String bottomLine;
   lcd.clear();
 
-  if(home_display) {
+  if (home_display) {
     lcd.setCursor(0,0);
     switch(run_state) {
       case READY:
@@ -188,7 +188,7 @@ void UpdateDisplay() {
     }
 
     lcd.setCursor(0,1);
-    if(quick_adjust_rpm) {
+    if (quick_adjust_rpm) {
       bottomLine = "Steps:" + String(settings[SET_STEPS].currentValue);
     }
     else {
@@ -207,8 +207,8 @@ void UpdateDisplay() {
 
       case DIS_VALUE:
       case DIS_POW:
-        if(settings[settings_sub_menu].divider > 1) {
-          if(settings[settings_sub_menu].divider == 17) {
+        if (settings[settings_sub_menu].divider > 1) {
+          if (settings[settings_sub_menu].divider == 17) {
             bottomLine = settings[settings_sub_menu].currentValue;
           }
           else {
@@ -334,18 +334,18 @@ void StepperMotor() {
 
   // Step signal flip-flop
   // It oscillates with the period of 2 * TIMER_PERIOD
-  if(current_time - micropulse >= half_period) {
+  if (current_time - micropulse >= half_period) {
     micropulse = current_time;
     step_signal == LOW ? step_signal = HIGH : step_signal = LOW;
     microsteps += (int)step_signal;
   }
 
 
-  if(microsteps < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
+  if (microsteps < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
     pause_start_time = current_time;
   }
   else {
-    if(current_time - pause_start_time < (unsigned long)(settings[SET_PAUSE].currentValue * 1000L)) {
+    if (current_time - pause_start_time < (unsigned long)(settings[SET_PAUSE].currentValue * 1000L)) {
       // This is how step signal is gated. This setting disconnects it from the oscillator above.
       step_signal = LOW;
     }
@@ -354,7 +354,7 @@ void StepperMotor() {
     }
   }
 
-  if(digitalRead(PAUSE_IN) == startStatePause) {
+  if (digitalRead(PAUSE_IN) == startStatePause) {
     run_state = PAUSED;
   }
   else {
@@ -407,7 +407,7 @@ void loop() {
   StepperMotor();
 
   // Make this a 100-Hz loop
-  if((micros()) < system_timer) return;
+  if ((micros()) < system_timer) return;
   system_timer = (micros() + TIMER_PERIOD);
 
   if (sample_button_state() != BTN_NONE && button_samples <= ButtonRepeatCount) {
