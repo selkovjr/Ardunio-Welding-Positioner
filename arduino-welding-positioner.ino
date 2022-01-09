@@ -10,9 +10,11 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 #define EEPROM_KEY 0xABCE // Change this if you modify any of the menus to refresh the EEPROM
 #define PUL_OUT   13      // Pulse output
 #define DIR_OUT   12      // Direction output
-#define EN_OUT    11      // Enable output
-#define KEY_IN    0       // Analog input from buttons on display
-#define PAUSE_IN  3       // Foot switch to start or stop the rotation
+#define GATE_OUT  11      // Motor enable output
+#define KEY_IN     0      // Analog input from buttons on display
+#define PAUSE_IN   3      // Foot switch to start or stop the rotation
+
+#define TIMER_PERIOD 10000  // 10ms
 
 const int stepsPerRevolution = 200;  // 1.8 degree step increments
 const unsigned long uSecPerMinute = 60000000;
@@ -65,10 +67,10 @@ enum {
 static int button = BTN_NONE;
 static int last_button  = BTN_NONE;
 static int last_run_state = PAUSED;
-volatile int togglePulse = LOW;
+volatile int step_signal = LOW;  // The motor makes a step on the front of this signal
 
 int startStatePause = LOW;
-static int run_state = READY;
+static int run_state = READY;  // trigger state
 
 bool home_display = true;
 bool quick_adjust_rpm = true;
@@ -234,7 +236,7 @@ void UpdateDisplay() {
     lcd.setCursor(bottomLine.length(), 1);
     lcd.print(settings[settings_sub_menu].bottomLine);
   }
-}
+}  // UpdateDisplay()
 
 bool HandleButton (int button) {
   bool refresh = true;
@@ -308,15 +310,15 @@ bool HandleButton (int button) {
     }
   }
   return refresh;
-}
+}  // HandleButton()
 
 void StepperMotor() {
   static unsigned long micropulse = 0;
-  static unsigned long micropause = 0;
   static unsigned long microsteps = 0;
+  static unsigned long pause_start_time = 0;
 
   unsigned long half_period = 0;
-  unsigned long micronow = micros();
+  unsigned long current_time = micros();
 
   double dmicroseconds =
     (double)((double)settings[SET_MICROSTEP].currentValue) *
@@ -330,19 +332,22 @@ void StepperMotor() {
   // Arduino isn't the most accurate timer; limit to 100us
   half_period = max(half_period, 100);
 
-  if(micronow - micropulse >= half_period) {
-    micropulse = micronow;
-    togglePulse == LOW ? togglePulse = HIGH : togglePulse = LOW;
-    microsteps += (int)togglePulse;
+  // Step signal flip-flop
+  // It oscillates with the period of 2 * TIMER_PERIOD
+  if(current_time - micropulse >= half_period) {
+    micropulse = current_time;
+    step_signal == LOW ? step_signal = HIGH : step_signal = LOW;
+    microsteps += (int)step_signal;
   }
 
 
   if(microsteps < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
-    micropause = micronow;
+    pause_start_time = current_time;
   }
   else {
-    if(micronow - micropause < (unsigned long)(settings[SET_PAUSE].currentValue * 1000L)) {
-      togglePulse = LOW;
+    if(current_time - pause_start_time < (unsigned long)(settings[SET_PAUSE].currentValue * 1000L)) {
+      // This is how step signal is gated. This setting disconnects it from the oscillator above.
+      step_signal = LOW;
     }
     else {
       microsteps = 0;
@@ -356,11 +361,13 @@ void StepperMotor() {
     run_state = RUN;
   }
 
-  digitalWrite(PUL_OUT, togglePulse ? HIGH : LOW);
+  // sprintf(buf, "%ld / %ld: %d", current_time, pause_start_time, run_state);
+  // Serial.println(buf);
+
+  digitalWrite(PUL_OUT, step_signal ? HIGH : LOW);
   digitalWrite(DIR_OUT, settings[SET_DIR].currentValue > 0 ? HIGH : LOW);
-  // digitalWrite(EN_OUT, run_state == PAUSED ? HIGH : LOW);
-  digitalWrite(EN_OUT, run_state == RUN ? LOW : HIGH);
-}
+  digitalWrite(GATE_OUT, run_state == PAUSED ? HIGH : LOW);
+}  // StepperMotor()
 
 void setup() {
   Serial.begin(115200);
@@ -379,12 +386,12 @@ void setup() {
   }
 
   pinMode(DIR_OUT, OUTPUT);
-  pinMode(EN_OUT, OUTPUT);
+  pinMode(GATE_OUT, OUTPUT);
   pinMode(PUL_OUT, OUTPUT);
   pinMode(PAUSE_IN, INPUT_PULLUP);
 
   digitalWrite(DIR_OUT, LOW);
-  digitalWrite(EN_OUT, HIGH); // Start in the paused state
+  digitalWrite(GATE_OUT, HIGH); // Start in the paused state
   digitalWrite(PUL_OUT, LOW);
 
   UpdateDisplay();
@@ -401,7 +408,7 @@ void loop() {
 
   // Make this a 100-Hz loop
   if((micros()) < system_timer) return;
-  system_timer = (micros() + 10000);
+  system_timer = (micros() + TIMER_PERIOD);
 
   if (sample_button_state() != BTN_NONE && button_samples <= ButtonRepeatCount) {
     // Measure the duration of the button press event; BTN_NONE signals the end of it.
