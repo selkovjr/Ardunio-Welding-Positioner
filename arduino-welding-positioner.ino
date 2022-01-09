@@ -7,8 +7,6 @@
 hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander chip
 
 
-#define USING_PAUSE_SWITCH (1) // Set to 1 if using an external switch (PAUSE_IN) to pause the stepper motor
-
 #define EEPROM_KEY 0xABCE // Change this if you modify any of the menus to refresh the EEPROM
 #define PUL_OUT   13      // Pulse output
 #define DIR_OUT   12      // Direction output
@@ -56,7 +54,7 @@ enum {
   SET_RATIO,
   SET_MICROSTEP,
   SET_PAUSE,
-  SET_TURN,
+  SET_STEPS,
   SET_RPM,
   SET_DIR,
   SET_VERSION,
@@ -69,12 +67,8 @@ static int last_button  = BTN_NONE;
 static int last_run_state = PAUSED;
 volatile int togglePulse = LOW;
 
-#if(USING_PAUSE_SWITCH == 1)
 int startStatePause = LOW;
 static int run_state = READY;
-#else
-static int run_state = RUN;
-#endif
 
 bool home_display = true;
 bool quick_adjust_rpm = true;
@@ -139,7 +133,7 @@ void reset_settings() {
   settings[SET_RATIO]     = (settings_s){EEPROM_KEY,  41,  41,  41,    41,  17,   0, DIS_VALUE, "Gear Ratio:    ", ":17    ", EEPROM_KEY};
   settings[SET_MICROSTEP] = (settings_s){EEPROM_KEY,  16,   0,   1,    32,   1,   2,   DIS_POW, "Microsteps:    ", "       ", EEPROM_KEY};
   settings[SET_PAUSE]     = (settings_s){EEPROM_KEY,   0,   0,   0,  5000,   1, 250, DIS_VALUE, "Pause:         ", "ms     ", EEPROM_KEY};
-  settings[SET_TURN]      = (settings_s){EEPROM_KEY,   2,   0,   1,   200,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
+  settings[SET_STEPS]     = (settings_s){EEPROM_KEY,   2,   0,   1,   200,   1,   1, DIS_VALUE, "Rotate:        ", " steps ", EEPROM_KEY};
   settings[SET_RPM]       = (settings_s){EEPROM_KEY, 100,   0,  10,  6000, 100,  10, DIS_VALUE, "Speed:         ", " RPM   ", EEPROM_KEY};
   settings[SET_DIR]       = (settings_s){EEPROM_KEY,   1,   0,   0,     1,   1,   1,   DIS_DIR, "Direction:     ", "       ", EEPROM_KEY};
   settings[SET_VERSION]   = (settings_s){EEPROM_KEY,   0,   0,   0,     0,   1,   0,  DIS_NONE, "Version:       ", "0.0.1  ", EEPROM_KEY};
@@ -193,7 +187,7 @@ void UpdateDisplay() {
 
     lcd.setCursor(0,1);
     if(quick_adjust_rpm) {
-      bottomLine = "Steps:" + String(settings[SET_TURN].currentValue);
+      bottomLine = "Steps:" + String(settings[SET_STEPS].currentValue);
     }
     else {
       bottomLine = "Pause:" + String((float)settings[SET_PAUSE].currentValue / (float)settings[SET_PAUSE].divider, 1) + "ms";
@@ -249,7 +243,7 @@ bool HandleButton (int button) {
     switch(button) {
       case (BTN_UP):
         if (quick_adjust_rpm) {
-          Increase(SET_TURN);
+          Increase(SET_STEPS);
         }
         else {
           Increase(SET_PAUSE);
@@ -258,7 +252,7 @@ bool HandleButton (int button) {
 
       case (BTN_DOWN):
         if (quick_adjust_rpm) {
-          Decrease(SET_TURN);
+          Decrease(SET_STEPS);
         }
         else {
           Decrease(SET_PAUSE);
@@ -321,7 +315,7 @@ void StepperMotor() {
   static unsigned long micropause = 0;
   static unsigned long microsteps = 0;
 
-  unsigned long microseconds = 0;
+  unsigned long half_period = 0;
   unsigned long micronow = micros();
 
   double dmicroseconds =
@@ -331,19 +325,19 @@ void StepperMotor() {
     2.0; //divide by 2 so there is equal time high and low
 
   // This is how many microseconds half the period will be
-  microseconds = uSecPerStepAtOneRPM / (unsigned long)dmicroseconds;
+  half_period = uSecPerStepAtOneRPM / (unsigned long)dmicroseconds;
 
   // Arduino isn't the most accurate timer; limit to 100us
-  microseconds = max(microseconds, 100);
+  half_period = max(half_period, 100);
 
-  if(micronow - micropulse >= microseconds) {
+  if(micronow - micropulse >= half_period) {
     micropulse = micronow;
     togglePulse == LOW ? togglePulse = HIGH : togglePulse = LOW;
     microsteps += (int)togglePulse;
   }
 
 
-  if(microsteps < (unsigned long)(settings[SET_TURN].currentValue * settings[SET_MICROSTEP].currentValue)) {
+  if(microsteps < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
     micropause = micronow;
   }
   else {
@@ -355,20 +349,17 @@ void StepperMotor() {
     }
   }
 
-#if(USING_PAUSE_SWITCH == 1)
   if(digitalRead(PAUSE_IN) == startStatePause) {
     run_state = PAUSED;
   }
   else {
-#endif
     run_state = RUN;
-#if(USING_PAUSE_SWITCH == 1)
   }
-#endif
 
   digitalWrite(PUL_OUT, togglePulse ? HIGH : LOW);
   digitalWrite(DIR_OUT, settings[SET_DIR].currentValue > 0 ? HIGH : LOW);
-  digitalWrite(EN_OUT, run_state == PAUSED ? HIGH : LOW);
+  // digitalWrite(EN_OUT, run_state == PAUSED ? HIGH : LOW);
+  digitalWrite(EN_OUT, run_state == RUN ? LOW : HIGH);
 }
 
 void setup() {
@@ -393,18 +384,14 @@ void setup() {
   pinMode(PAUSE_IN, INPUT_PULLUP);
 
   digitalWrite(DIR_OUT, LOW);
-  digitalWrite(EN_OUT, HIGH); //Start paused
+  digitalWrite(EN_OUT, HIGH); // Start in the paused state
   digitalWrite(PUL_OUT, LOW);
 
   UpdateDisplay();
 
-#if(USING_PAUSE_SWITCH == 1)
  run_state = READY;
  startStatePause = digitalRead(PAUSE_IN);
-#else
-  run_state = RUN;
-#endif
-}
+}  // setup()
 
 void loop() {
   static unsigned int button_samples = 0;
