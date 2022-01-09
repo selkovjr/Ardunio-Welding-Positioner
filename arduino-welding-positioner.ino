@@ -361,6 +361,7 @@ void StepperMotor() {
 
   if (digitalRead(PAUSE_IN) == trigger_state_on_power_up) {
     run_state = PAUSED;
+    pause_start_time = current_time;
   }
   else {
     run_state = RUN;
