@@ -69,7 +69,11 @@ static int last_button  = BTN_NONE;
 static int last_run_state = PAUSED;
 volatile int step_signal = LOW;  // The motor makes a step on the front of this signal
 
-int startStatePause = LOW;
+// This variable abstracts trigger switch position.
+// If it is closed on power-up, that state will be remembered as the off state.
+// Otherwise, trigger switch opening will command the off state.
+int trigger_state_on_power_up;
+
 static int run_state = READY;  // trigger state
 
 bool home_display = true;
@@ -313,8 +317,8 @@ bool HandleButton (int button) {
 }  // HandleButton()
 
 void StepperMotor() {
-  static unsigned long micropulse = 0;
-  static unsigned long microsteps = 0;
+  static unsigned long last_pulse_transition_time = 0;
+  static unsigned long microstep_count = 0;
   static unsigned long pause_start_time = 0;
 
   unsigned long half_period = 0;
@@ -334,34 +338,35 @@ void StepperMotor() {
 
   // Step signal flip-flop
   // It oscillates with the period of 2 * TIMER_PERIOD
-  if (current_time - micropulse >= half_period) {
-    micropulse = current_time;
+  if (current_time - last_pulse_transition_time >= half_period) {
+    last_pulse_transition_time = current_time;
     step_signal == LOW ? step_signal = HIGH : step_signal = LOW;
-    microsteps += (int)step_signal;
+    microstep_count += (int)step_signal;
   }
 
 
-  if (microsteps < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
+  if (microstep_count < (unsigned long)(settings[SET_STEPS].currentValue * settings[SET_MICROSTEP].currentValue)) {
+    // This is the motor on phase; keep moving pause_start_time to remember the end of the motor on phase.
     pause_start_time = current_time;
   }
-  else {
+  else { // We get here after having run through all microsteps
     if (current_time - pause_start_time < (unsigned long)(settings[SET_PAUSE].currentValue * 1000L)) {
       // This is how step signal is gated. This setting disconnects it from the oscillator above.
       step_signal = LOW;
     }
     else {
-      microsteps = 0;
+      microstep_count = 0;
     }
   }
 
-  if (digitalRead(PAUSE_IN) == startStatePause) {
+  if (digitalRead(PAUSE_IN) == trigger_state_on_power_up) {
     run_state = PAUSED;
   }
   else {
     run_state = RUN;
   }
 
-  // sprintf(buf, "%ld / %ld: %d", current_time, pause_start_time, run_state);
+  // sprintf(buf, "%ld %ld", current_time, pause_start_time);
   // Serial.println(buf);
 
   digitalWrite(PUL_OUT, step_signal ? HIGH : LOW);
@@ -397,7 +402,7 @@ void setup() {
   UpdateDisplay();
 
  run_state = READY;
- startStatePause = digitalRead(PAUSE_IN);
+ trigger_state_on_power_up = digitalRead(PAUSE_IN);
 }  // setup()
 
 void loop() {
